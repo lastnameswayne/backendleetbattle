@@ -6,6 +6,7 @@ import { buildSchema } from "type-graphql";
 import { HelloWorldResolver } from "./resolvers/HelloWorldResolver";
 import makeId from "./const/utils";
 import { router } from "websocket";
+const cors = require("cors");
 
 (async () => {
 
@@ -13,6 +14,8 @@ import { router } from "websocket";
   const clientRooms: any = {}
 
   const app = express();
+  app.use(cors())
+  app.use(express.json());
   const http = require("http").Server(app);
   const io = require("socket.io")(http, {
     cors: {
@@ -22,13 +25,14 @@ import { router } from "websocket";
   });
 
   io.on("connection", async (client: any) => {    
+    
     const handleNewGame = () => {
       let roomName = makeId(5)
       clientRooms[client.id] = roomName;
       client.emit('gameCode', roomName);
       client.join(roomName);
       client.number = 1;
-      client.emit('init', 1);
+      client.emit('init', 1, roomName);
       console.log(roomName);
 
       //send to game screen, use the emit roomname as the header in the navbar or
@@ -37,12 +41,11 @@ import { router } from "websocket";
 
     const handleJoinGame = async (roomName: string) => {
       console.log(client.id);
-      client.join(roomName)
       roomName.trim
       roomName.toString
       const room = await io.in(roomName).allSockets()
       console.log(roomName);
-
+      
       console.log(room);
     let numClients = 0;
     if (room) {
@@ -107,6 +110,9 @@ import { router } from "websocket";
     }),
     context: ({ req, res }) => ({ req, res }),
   });
+
+  const codeRouter = require("./routes/routes");
+  app.use("/", codeRouter)
 
   apolloServer.applyMiddleware({ app, cors: false });
   const port = process.env.PORT || 4000;
