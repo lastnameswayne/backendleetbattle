@@ -1,3 +1,5 @@
+import { response } from "express";
+
 const router = require("express").Router();
 const axios = require("axios");
 
@@ -22,36 +24,37 @@ let data = {
   base64_encoded: true,
 };
 
-router.route("/run").post((req: any) => {
-   if (!req) {return}
-
-  data.source_code = req.body.code
+router.route("/run").post((req: any, res: any) => {
+  data.source_code = req.body.code;
   axios({
     url: "http://35.205.20.238/submissions",
     method: "POST",
     data: data,
   })
-    .then(async (res: any) => {  
+    .then(async (req: any, res: any) => {
+      //first call generates a token
       await new Promise((resolve) => setTimeout(resolve, 1000)); // 3 sec
-      axios.get("http://35.205.20.238/submissions/" + res.data.token)
-        .then((res: any) => {            
-          console.log(res);
-          if (!res) {
+      //after waiting, use the token to get the res.data.stdout which is 
+      //what I want to send to frontend using res.send()
+      axios
+        .get("http://35.205.20.238/submissions/" + req.data.token)
+        .then((req: any, res: any) => {
+          console.log(req);
+          if (!req) {
             console.log("no output");
           }
-          finalOutput = res.data.stdout
-          console.log(res.data.stdout);
-          })
+          finalOutput = req.data.stdout;
+          console.log(req.data.stdout);
+        });
     })
     .catch((err: Error) => console.log(err));
 });
 
 router.route("/submit").post((req: any) => {
-    console.log(req.body.code);
-    
-    console.log("submit")
-});
+  console.log(req.body.code);
 
+  console.log("submit");
+});
 
 const testcases = [];
 

@@ -16,7 +16,7 @@ const cors = require("cors");
   const app = express();
   app.use(cors())
   app.use(express.json());
-  const http = require("http").Server(app);
+  const http = require("http").Server(app);  
   const io = require("socket.io")(http, {
     cors: {
       origin: "http://localhost:3000",
@@ -32,7 +32,7 @@ const cors = require("cors");
       client.emit('gameCode', roomName);
       client.join(roomName);
       client.number = 1;
-      client.emit('init', 1, roomName);
+      client.emit('create', 1, roomName);
       console.log(roomName);
 
       //send to game screen, use the emit roomname as the header in the navbar or
@@ -66,11 +66,9 @@ const cors = require("cors");
 
     client.join(roomName);
     client.number = 2;
-    client.emit('init', 2);
-    
-
+    client.emit('join', 2, roomName)
     //now we can start the game!!
-    }
+ }
 
     // const emitGameState = (roomName: any, state: any) => {
     //   io.sockets.in(roomName)
