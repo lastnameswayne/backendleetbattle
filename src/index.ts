@@ -5,6 +5,7 @@ import { ApolloServer } from "apollo-server-express";
 import { buildSchema } from "type-graphql";
 import { HelloWorldResolver } from "./resolvers/HelloWorldResolver";
 import makeId from "./const/utils";
+import dedent from "dedent";
 const cors = require("cors");
 
 (async () => {
@@ -45,13 +46,34 @@ const cors = require("cors");
     max_file_size: "1024",
     base64_encoded: true,
   };
-  const codeOutput: string = ""
-  const errorOutput:string=""
+  const codeOutput: string = "";
+  const errorOutput: string = "";
+
+  let testcasesTwoSum = {
+    testcase1arr: "(2,7,1,15)",
+    testcase1target: "9",
+    testcase2arr: "(-3,4,3,90)",
+    testcase2target: "0",
+    testcase3arr: "(100,4,657,999,1,5,10,8,5,4,10)",
+    testcase3target: "1656",
+    testcase4arr: "-500,4,3,60,40,0",
+    testcase4target: "100",
+    testcase5arr: "-500,4,3,60,40,0",
+    testcase5target: "-496",
+  };
+
+  let testcaseAnswersTwoSum = {
+    testcase1expected: "(1, 2)",
+    testcase2expected: "(1, 3)",
+    testcase3expected: "(3, 4)",
+    testcase4expected: "(4, 5)",
+    testcase5expected: "(1, 2)",
+  };
 
   let output: any = {
     codeOutput: codeOutput,
-    errorOutput: errorOutput
-  }
+    errorOutput: errorOutput,
+  };
 
   io.on("connection", async (client: any) => {
     const handleNewGame = () => {
@@ -62,10 +84,8 @@ const cors = require("cors");
       client.number = 1;
       client.emit("create", 1, roomName);
       console.log(roomName);
-
-      //send to game screen, use the emit roomname as the header in the navbar or
-      //make a details tab on the left side of the screen
     };
+
     const handleJoinGame = async (roomName: string) => {
       console.log(client.id);
       roomName.trim;
@@ -102,31 +122,27 @@ const cors = require("cors");
       startCountDownFrom10(roomName);
     };
 
-
-    const startCountDownFrom10 = (roomName:string) => {
-      let time = 10
+    const startCountDownFrom10 = (roomName: string) => {
+      let time = 10;
       let interval = setInterval(() => {
-        time = time-1
+        time = time - 1;
         io.to(roomName).emit("countdown10", time);
-      if (time===0) {
-        clearInterval(interval)
-        startGameInterval(roomName)
-        return;
-      }
-    }, 1000)
-    }
-
+        if (time === 0) {
+          clearInterval(interval);
+          startGameInterval(roomName);
+          return;
+        }
+      }, 1000);
+    };
 
     const startGameInterval = async (roomName: string) => {
       console.log("both players joined in", roomName);
-      let time = 0
+      let time = 0;
       setInterval(() => {
-        time = time+0.1
+        time = time + 0.1;
         io.to(roomName).emit("timer", time);
-      }, 100)
-
+      }, 100);
     };
-
 
     const handleRun = (roomName: string) => {
       console.log("got to run");
@@ -152,10 +168,10 @@ const cors = require("cors");
                 }
                 finalOutput = req.data.stdout;
                 console.log(finalOutput);
-                output.codeOutput=req.data.stdout
-                output.errorOutput=req.data.stderr
+                output.codeOutput = req.data.stdout;
+                output.errorOutput = req.data.stderr;
                 console.log(output);
-                sendCode(roomName, output)               
+                sendCode(roomName, output);
               });
           })
           .catch((err: Error) => console.log(err));
@@ -164,15 +180,79 @@ const cors = require("cors");
 
     const sendCode = async (roomName: string, output: any) => {
       console.log("senc code");
-      console.log(output);     
+      console.log(output);
       console.log(roomName);
       io.to(roomName).emit("code", output);
+    };
+
+    const handleSubmit = (roomName: string) => {
+      console.log("got to submit");
+
+      app.route("/submit").post((req: any, res: any) => {
+        //formatcode
+        const input: any = `${req.body.code}        
+
+
+        ${dedent(
+          `''
+        a = ${testcasesTwoSum.testcase1arr} 
+        t = ${testcasesTwoSum.testcase1target} 
+        print(two_sum(a,t)) 
+        `
+        )}
+       `;
+
+        //run the code
+        data.source_code = input;
+        console.log(data);
+        console.log("GOT INTO RUN AXIOS CALL", data);
+
+        axios({
+          url: "http://35.205.20.238/submissions",
+          method: "POST",
+          data: data,
+        })
+          .then(async (req: any, res: any) => {
+            console.log("got the token", req.data.token);
+            console.log("code inputted", data.source_code);
+
+            //first call generates a token
+            await new Promise((resolve) => setTimeout(resolve, 1000)); // 3 sec
+            //after waiting, use the token to get the res.data.stdout which is
+            //what I want to send to frontend using res.send()
+            axios
+              .get("http://35.205.20.238/submissions/" + req.data.token)
+              .then((req: any, res: any) => {
+                console.log(req);
+                if (!req) {
+                  console.log("no output");
+                }
+                finalOutput = req.data.stdout;
+                console.log(finalOutput);
+                output.codeOutput = req.data.stdout;
+                output.errorOutput = req.data.stderr;
+                console.log("OUTPUT", output);
+                validateAnswer(output.codeOutput);
+              });
+          })
+          .catch((err: Error) => console.log(err));
+      });
+    };
+
+    const validateAnswer = (output: string) => {
+      const USERSUBMIT=output.trim()
+      const ANSWER=testcaseAnswersTwoSum.testcase1expected.trim()
+      
+      if (USERSUBMIT.localeCompare(ANSWER)===0) {
+      console.log("correct submission");
+      }
+      return;
     };
 
     client.on("newGame", handleNewGame);
     client.on("joinGame", handleJoinGame);
     client.on("run", handleRun);
-    
+    client.on("submit", handleSubmit);
   });
 
   io.listen(4001);
