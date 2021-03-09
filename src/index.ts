@@ -6,6 +6,7 @@ import { buildSchema } from "type-graphql";
 import { HelloWorldResolver } from "./resolvers/HelloWorldResolver";
 import makeId from "./const/utils";
 import dedent from "dedent";
+import { Socket } from "dgram";
 const cors = require("cors");
 
 (async () => {
@@ -75,7 +76,11 @@ const cors = require("cors");
     errorOutput: errorOutput,
   };
 
+  let timerRunning: boolean = true
+
   io.on("connection", async (client: any) => {
+    client.removeAllListeners();
+
     const handleNewGame = () => {
       let roomName = makeId(5);
       clientRooms[client.id] = roomName;
@@ -135,13 +140,22 @@ const cors = require("cors");
       }, 1000);
     };
 
+    const handleLeave = (roomName: string) => {
+      console.log("fired");
+      
+      client.leave(roomName);
+    }
+
     const startGameInterval = async (roomName: string) => {
       console.log("both players joined in", roomName);
       let time = 0;
       setInterval(() => {
-        time = time + 0.1;
+        if (timerRunning) {
+        time = time + 0.1
         io.to(roomName).emit("timer", time);
-      }, 100);
+      } else {
+        return
+      }}, 100);
     };
 
     const handleRun = (roomName: string) => {
@@ -185,8 +199,12 @@ const cors = require("cors");
       io.to(roomName).emit("code", output);
     };
 
-    const handleSubmit = (roomName: string) => {
+    const handleSubmit = (roomName: string, playerNumber: string) => {
+      console.log(roomName);
+      
       console.log("got to submit");
+      console.log(playerNumber);
+      
 
       app.route("/submit").post((req: any, res: any) => {
         //formatcode
@@ -232,19 +250,23 @@ const cors = require("cors");
                 output.codeOutput = req.data.stdout;
                 output.errorOutput = req.data.stderr;
                 console.log("OUTPUT", output);
-                validateAnswer(output.codeOutput);
+                validateAnswer(output.codeOutput, roomName, playerNumber);
+                console.log(playerNumber);
+                console.log(roomName);
               });
           })
           .catch((err: Error) => console.log(err));
       });
     };
 
-    const validateAnswer = (output: string) => {
+    const validateAnswer = (output: string, roomName: string, playerNumber: string) => {
       const USERSUBMIT=output.trim()
       const ANSWER=testcaseAnswersTwoSum.testcase1expected.trim()
-      
+      console.log(playerNumber);
       if (USERSUBMIT.localeCompare(ANSWER)===0) {
-      console.log("correct submission");
+        console.log("game over")
+        io.to(roomName).emit("gameOver", playerNumber);
+        timerRunning = false
       }
       return;
     };
@@ -253,6 +275,7 @@ const cors = require("cors");
     client.on("joinGame", handleJoinGame);
     client.on("run", handleRun);
     client.on("submit", handleSubmit);
+    client.on("leave", handleLeave)
   });
 
   io.listen(4001);
@@ -273,6 +296,6 @@ const cors = require("cors");
   apolloServer.applyMiddleware({ app, cors: false });
   const port = process.env.PORT || 4000;
   app.listen(port, () => {
-    console.log(`server started at http://localhost:${port}/graphql`);
+    console.log(`server started at http:/localhost:${port}/graphql`);
   });
 })();
