@@ -1,12 +1,12 @@
-import "reflect-metadata";
-import { createConnection, getConnectionOptions } from "typeorm";
-import express from "express";
 import { ApolloServer } from "apollo-server-express";
-import { buildSchema } from "type-graphql";
-import { HelloWorldResolver } from "./resolvers/HelloWorldResolver";
-import makeId from "./const/utils";
 import dedent from "dedent";
 import { Socket } from "dgram";
+import express from "express";
+import "reflect-metadata";
+import { buildSchema } from "type-graphql";
+import { createConnection, getConnectionOptions } from "typeorm";
+import makeId from "./const/utils";
+import { HelloWorldResolver } from "./resolvers/HelloWorldResolver";
 const cors = require("cors");
 
 (async () => {
@@ -23,6 +23,8 @@ const cors = require("cors");
       origin: "http://localhost:3000",
       methods: ["GET", "POST"],
     },
+    forceNew: true,
+    perMessageDeflate: false,
   });
 
   const axios = require("axios");
@@ -76,7 +78,7 @@ const cors = require("cors");
     errorOutput: errorOutput,
   };
 
-  let timerRunning: boolean = true
+  let timerRunning: boolean = true;
 
   io.on("connection", async (client: any) => {
     client.removeAllListeners();
@@ -140,37 +142,29 @@ const cors = require("cors");
       }, 1000);
     };
 
-    const handleLeave = (roomName: string) => {
-      console.log("fired");
-      
-      client.leave(roomName);
-    }
-
     const startGameInterval = async (roomName: string) => {
       console.log("both players joined in", roomName);
       let time = 0;
       setInterval(() => {
-        if (timerRunning) {
-        time = time + 0.1
+        time = time + 0.1;
         io.to(roomName).emit("timer", time);
-      } else {
-        return
-      }}, 100);
+      }, 100);
     };
 
-    const handleRun = (roomName: string) => {
+    const handleRun = (roomName: string, playerNumber: string) => {
       console.log("got to run");
 
       app.route("/run").post((req: any, res: any) => {
-        data.source_code = req.body.code;
+        data.source_code = req.body.code.code;        
         axios({
           url: "http://35.205.20.238/submissions",
           method: "POST",
           data: data,
         })
           .then(async (req: any, res: any) => {
+            
             //first call generates a token
-            await new Promise((resolve) => setTimeout(resolve, 1000)); // 3 sec
+            await new Promise((resolve) => setTimeout(resolve, 1000)); // 1 sec
             //after waiting, use the token to get the res.data.stdout which is
             //what I want to send to frontend using res.send()
             axios
@@ -188,7 +182,10 @@ const cors = require("cors");
                 sendCode(roomName, output);
               });
           })
-          .catch((err: Error) => console.log(err));
+          .catch((err: Error) => {
+            io.to(roomName).emit("serverError", playerNumber);
+            console.log(err);
+          });
       });
     };
 
@@ -201,14 +198,13 @@ const cors = require("cors");
 
     const handleSubmit = (roomName: string, playerNumber: string) => {
       console.log(roomName);
-      
+
       console.log("got to submit");
       console.log(playerNumber);
-      
 
       app.route("/submit").post((req: any, res: any) => {
         //formatcode
-        const input: any = `${req.body.code}        
+        const input: any = `${req.body.code.code}        
 
 
         ${dedent(
@@ -255,18 +251,31 @@ const cors = require("cors");
                 console.log(roomName);
               });
           })
-          .catch((err: Error) => console.log(err));
+          .catch((err: Error) => {
+            io.to(roomName).emit("serverError", playerNumber);
+
+            console.log(err);
+          });
       });
     };
 
-    const validateAnswer = (output: string, roomName: string, playerNumber: string) => {
-      const USERSUBMIT=output.trim()
-      const ANSWER=testcaseAnswersTwoSum.testcase1expected.trim()
+    const validateAnswer = (
+      output: string,
+      roomName: string,
+      playerNumber: string
+    ) => {
+      if (!output) {
+        io.to(roomName).emit("serverError", playerNumber);
+      }
+      const USERSUBMIT = output.trim();
+      const ANSWER = testcaseAnswersTwoSum.testcase1expected.trim();
       console.log(playerNumber);
-      if (USERSUBMIT.localeCompare(ANSWER)===0) {
-        console.log("game over")
+      if (USERSUBMIT.localeCompare(ANSWER) === 0) {
+        console.log("game over");
         io.to(roomName).emit("gameOver", playerNumber);
-        timerRunning = false
+        timerRunning = false;
+      } else {
+        io.to(roomName).emit("wrongSubmit", playerNumber);
       }
       return;
     };
@@ -275,7 +284,11 @@ const cors = require("cors");
     client.on("joinGame", handleJoinGame);
     client.on("run", handleRun);
     client.on("submit", handleSubmit);
-    client.on("leave", handleLeave)
+    client.on("disconnectClient", function () {      
+      client.removeAllListeners("send message");
+      client.removeAllListeners("disconnect");
+      io.removeAllListeners("connection");
+    });
   });
 
   io.listen(4001);
