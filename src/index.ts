@@ -1,26 +1,33 @@
-import { ApolloServer } from "apollo-server-express";
 import dedent from "dedent";
-import { Socket } from "dgram";
 import express from "express";
 import "reflect-metadata";
-import { buildSchema } from "type-graphql";
 import { createConnection, getConnectionOptions } from "typeorm";
 import makeId from "./const/utils";
-import { HelloWorldResolver } from "./resolvers/HelloWorldResolver";
+import 'dotenv/config'
+import compareStrings from './const/util/compareStrings'
+//import { buildSchema } from "type-graphql";
+//import { HelloWorldResolver } from "./resolvers/HelloWorldResolver";
+//import { ApolloServer } from "apollo-server-express";
+
 const cors = require("cors");
 
 (async () => {
-  // const state = {}
   const clientRooms: any = {};
-  const state: any = {};
+  let playerNumberRun: string  = ""
+  let playerNumberSubmit: string = ""
+  let code;
+  let codeOutput: string = "";
+  let errorOutput: string = "";
 
   const app = express();
+  console.log(process.env.CLIENT_URL);
+  
   app.use(cors());
   app.use(express.json());
   const http = require("http").Server(app);
   const io = require("socket.io")(http, {
     cors: {
-      origin: "http://localhost:3000",
+      origin: process.env.CLIENT_URL,
       methods: ["GET", "POST"],
     },
     forceNew: true,
@@ -29,12 +36,9 @@ const cors = require("cors");
 
   const axios = require("axios");
 
-  let code;
-  let finalOutput: any;
-
   let data = {
     source_code: code,
-    language_id: 70,
+    language_id: 71,
     number_of_runs: "1",
     stdin: "Judge0",
     expected_output: null,
@@ -49,30 +53,33 @@ const cors = require("cors");
     max_file_size: "1024",
     base64_encoded: true,
   };
-  const codeOutput: string = "";
-  const errorOutput: string = "";
 
-  const testcasesTwoSum = new Map<string,string>([
-    ["testcase1arr", "2,7,1,15"],
+  const testcasesTwoSum = new Map<string, string>([
+    ["testcase1arr", "[2,7,11,15]"],
     ["testcase1target", "9"],
-    ["testcase2arr", "-3,4,3,90"],
+    ["testcase2arr", "[-3,4,3,90]"],
     ["testcase2target", "0"],
-    ["testcase3arr", "100,4,657,999,1,5,10,8,5,4,10"],
+    ["testcase3arr", "[100,4,657,999,1,5,10,8,5,4,10]"],
     ["testcase3target", "1656"],
-    ["testcase4arr", "-500,4,3,60,40,0"],
+    ["testcase4arr", "[-500,4,3,60,40,0]"],
     ["testcase4target", "100"],
-    ["testcase5arr", "-500,4,3,60,40,0"],
+    ["testcase5arr", "[-500,4,3,60,40,0]"],
     ["testcase5target", "-496"],
   ]);
-  let testcaseAnswersTwoSum: Array<string> =
-    ["(1, 2)", "(1, 3)", "(3, 4)", "(4, 5)", "(1, 2)"]
+
+  let testcaseAnswersTwoSum: Array<string> = [
+    "[0, 1]",
+    "[0, 2]",
+    "[2, 3]",
+    "[4, 3]",
+    "[0, 1]",
+  ];
 
   let output: any = {
     codeOutput: codeOutput,
     errorOutput: errorOutput,
   };
 
-  let timerRunning: boolean = true;
 
   io.on("connection", async (client: any) => {
     client.removeAllListeners();
@@ -141,13 +148,12 @@ const cors = require("cors");
       io.to(roomName).emit("timer");
     };
 
-    const handleRun = (roomName: string, playerNumber: string) => {
-      console.log("got to run");
-
-      app.route("/run").post((req: any, res: any) => {
+    const handleRun = async (roomName: string, playerNumber: string) => {
+      playerNumberRun = playerNumber
+      app.route("/run").post((req: any, res: any) => { 
         data.source_code = req.body.code.code;
         axios({
-          url: "http://35.205.20.238/submissions",
+          url: process.env.VM_URL,
           method: "POST",
           data: data,
         })
@@ -157,26 +163,31 @@ const cors = require("cors");
             //after waiting, use the token to get the res.data.stdout which is
             //what I want to send to frontend using res.send()
             axios
-              .get("http://35.205.20.238/submissions/" + req.data.token)
+              .get(process.env.VM_URL+ '/'+ req.data.token)
               .then((req: any, res: any) => {
-                console.log(req);
                 if (!req) {
                   console.log("no output");
                 }
                 output.codeOutput = req.data.stdout;
                 output.errorOutput = req.data.stderr;
-                console.log(output);
-                sendCode(roomName, output, playerNumber);
-              });
+                sendCode(roomName, output, playerNumberRun);
+              })
           })
           .catch((err: Error) => {
-            io.to(roomName).emit("serverError", playerNumber);
+            io.to(roomName).emit("serverError", playerNumberRun);
             console.log(err);
           });
       });
+      
     };
 
-    const sendCode = async (roomName: string, output: any, playerNumber: string) => {
+    const sendCode = async (
+      roomName: string,
+      output: any,
+      playerNumber: string
+    ) => {
+      console.log("player number in send code",playerNumber);
+      
       console.log("senc code");
       console.log(output);
       console.log(roomName);
@@ -184,17 +195,11 @@ const cors = require("cors");
     };
 
     const handleSubmit = (roomName: string, playerNumber: string) => {
-      console.log(roomName);
 
-      console.log("got to submit");
-      console.log(playerNumber);
+      playerNumberSubmit = playerNumber
 
       app.route("/submit").post((req: any, res: any) => {
-        //formatcode
-        for (let value of testcasesTwoSum.values()) {
-          console.log(value);
-        }
-
+        //adding all testcases and printing them to check the solution
         const input: any = `${req.body.code.code}        
       
 
@@ -221,42 +226,37 @@ const cors = require("cors");
 
         //run the code
         data.source_code = input;
-        console.log(data);
-        console.log("GOT INTO RUN AXIOS CALL", data);
-
+          console.log(data.source_code);
+          
         axios({
-          url: "http://35.205.20.238/submissions",
+          url: process.env.VM_URL,
           method: "POST",
           data: data,
         })
           .then(async (req: any, res: any) => {
-            console.log("got the token", req.data.token);
-            console.log("code inputted", data.source_code);
-
             //first call generates a token
             await new Promise((resolve) => setTimeout(resolve, 1000)); // 3 sec
             //after waiting, use the token to get the res.data.stdout which is
             //what I want to send to frontend using res.send()
             axios
-              .get("http://35.205.20.238/submissions/" + req.data.token)
+              .get(process.env.VM_URL + '/' + req.data.token)
               .then((req: any, res: any) => {
-                console.log(req);
                 if (!req) {
                   console.log("no output");
                 }
                 output.codeOutput = req.data.stdout;
                 output.errorOutput = req.data.stderr;
-                console.log("OUTPUT", output);                
                 if (!output.codeOutput) {
-                  io.to(roomName).emit("wrongSubmit", playerNumber);
+                  console.log("no code output");
+                  io.to(roomName).emit("wrongSubmit", playerNumberSubmit);
                   return;
-                } 
-                let outputArray = output.codeOutput.split('\n');                
-                validateAnswer(outputArray, roomName, playerNumber);                
+                }
+                let outputArray = output.codeOutput.split("\n");
+                validateAnswer(outputArray, roomName, playerNumberSubmit);
               });
           })
           .catch((err: Error) => {
-            io.to(roomName).emit("serverError", playerNumber);
+            io.to(roomName).emit("serverError", playerNumberSubmit);
             console.log(err);
           });
       });
@@ -272,22 +272,24 @@ const cors = require("cors");
         return;
       }
       let USERSUBMIT: Array<string> = output;
-      USERSUBMIT.pop() //remove last element which is empty because of the output
+      USERSUBMIT.pop(); //remove last element which is empty because of the output
+
+      //run through every test case
+      console.log(USERSUBMIT);
+      console.log(testcaseAnswersTwoSum);
       
-      //run throigh every test case
       USERSUBMIT.every((element, index) => {
-        if (element.localeCompare(testcaseAnswersTwoSum[index])===0) {
+        if (compareStrings(element, testcaseAnswersTwoSum[index])) {
           //winner
-          console.log("game over, winner found")
+          console.log("game over, winner found");
           io.to(roomName).emit("gameOver", playerNumber);
           return;
-        }
-        else {
+        } else {
           //wrong answer
           console.log("wrong answer");
-           io.to(roomName).emit("wrongSubmit", playerNumber);
+          io.to(roomName).emit("wrongSubmit", playerNumber);
         }
-      })
+      });
       return;
     };
 
@@ -308,16 +310,17 @@ const cors = require("cors");
     process.env.NODE_ENV || "development"
   );
   await createConnection({ ...options, name: "default" });
+  
+  //graphQL support
+  // const apolloServer = new ApolloServer({
+  //   schema: await buildSchema({
+  //     resolvers: [HelloWorldResolver],
+  //     validate: true,
+  //   }),
+  //   context: ({ req, res }) => ({ req, res }),
+  // });
 
-  const apolloServer = new ApolloServer({
-    schema: await buildSchema({
-      resolvers: [HelloWorldResolver],
-      validate: true,
-    }),
-    context: ({ req, res }) => ({ req, res }),
-  });
-
-  apolloServer.applyMiddleware({ app, cors: false });
+  //apolloServer.applyMiddleware({ app, cors: false });
   const port = process.env.PORT || 4000;
   app.listen(port, () => {
     console.log(`server started at http:/localhost:${port}/graphql`);
