@@ -52,26 +52,20 @@ const cors = require("cors");
   const codeOutput: string = "";
   const errorOutput: string = "";
 
-  let testcasesTwoSum = {
-    testcase1arr: "(2,7,1,15)",
-    testcase1target: "9",
-    testcase2arr: "(-3,4,3,90)",
-    testcase2target: "0",
-    testcase3arr: "(100,4,657,999,1,5,10,8,5,4,10)",
-    testcase3target: "1656",
-    testcase4arr: "-500,4,3,60,40,0",
-    testcase4target: "100",
-    testcase5arr: "-500,4,3,60,40,0",
-    testcase5target: "-496",
-  };
-
-  let testcaseAnswersTwoSum = {
-    testcase1expected: "(1, 2)",
-    testcase2expected: "(1, 3)",
-    testcase3expected: "(3, 4)",
-    testcase4expected: "(4, 5)",
-    testcase5expected: "(1, 2)",
-  };
+  const testcasesTwoSum = new Map<string,string>([
+    ["testcase1arr", "2,7,1,15"],
+    ["testcase1target", "9"],
+    ["testcase2arr", "-3,4,3,90"],
+    ["testcase2target", "0"],
+    ["testcase3arr", "100,4,657,999,1,5,10,8,5,4,10"],
+    ["testcase3target", "1656"],
+    ["testcase4arr", "-500,4,3,60,40,0"],
+    ["testcase4target", "100"],
+    ["testcase5arr", "-500,4,3,60,40,0"],
+    ["testcase5target", "-496"],
+  ]);
+  let testcaseAnswersTwoSum: Array<string> =
+    ["(1, 2)", "(1, 3)", "(3, 4)", "(4, 5)", "(1, 2)"]
 
   let output: any = {
     codeOutput: codeOutput,
@@ -144,25 +138,20 @@ const cors = require("cors");
 
     const startGameInterval = async (roomName: string) => {
       console.log("both players joined in", roomName);
-      let time = 0;
-      setInterval(() => {
-        time = time + 0.1;
-        io.to(roomName).emit("timer", time);
-      }, 100);
+      io.to(roomName).emit("timer");
     };
 
     const handleRun = (roomName: string, playerNumber: string) => {
       console.log("got to run");
 
       app.route("/run").post((req: any, res: any) => {
-        data.source_code = req.body.code.code;        
+        data.source_code = req.body.code.code;
         axios({
           url: "http://35.205.20.238/submissions",
           method: "POST",
           data: data,
         })
           .then(async (req: any, res: any) => {
-            
             //first call generates a token
             await new Promise((resolve) => setTimeout(resolve, 1000)); // 1 sec
             //after waiting, use the token to get the res.data.stdout which is
@@ -174,12 +163,10 @@ const cors = require("cors");
                 if (!req) {
                   console.log("no output");
                 }
-                finalOutput = req.data.stdout;
-                console.log(finalOutput);
                 output.codeOutput = req.data.stdout;
                 output.errorOutput = req.data.stderr;
                 console.log(output);
-                sendCode(roomName, output);
+                sendCode(roomName, output, playerNumber);
               });
           })
           .catch((err: Error) => {
@@ -189,11 +176,11 @@ const cors = require("cors");
       });
     };
 
-    const sendCode = async (roomName: string, output: any) => {
+    const sendCode = async (roomName: string, output: any, playerNumber: string) => {
       console.log("senc code");
       console.log(output);
       console.log(roomName);
-      io.to(roomName).emit("code", output);
+      io.to(roomName).emit("code", output, playerNumber);
     };
 
     const handleSubmit = (roomName: string, playerNumber: string) => {
@@ -204,14 +191,30 @@ const cors = require("cors");
 
       app.route("/submit").post((req: any, res: any) => {
         //formatcode
-        const input: any = `${req.body.code.code}        
+        for (let value of testcasesTwoSum.values()) {
+          console.log(value);
+        }
 
+        const input: any = `${req.body.code.code}        
+      
 
         ${dedent(
           `''
-        a = ${testcasesTwoSum.testcase1arr} 
-        t = ${testcasesTwoSum.testcase1target} 
-        print(two_sum(a,t)) 
+        a1 = ${testcasesTwoSum.get("testcase1arr")} 
+        t1 = ${testcasesTwoSum.get("testcase1target")}
+        a2 = ${testcasesTwoSum.get("testcase2arr")}  
+        t2 = ${testcasesTwoSum.get("testcase2target")}
+        a3 = ${testcasesTwoSum.get("testcase3arr")} 
+        t3 = ${testcasesTwoSum.get("testcase3target")}
+        a4 = ${testcasesTwoSum.get("testcase4arr")} 
+        t4 = ${testcasesTwoSum.get("testcase4target")}
+        a5 = ${testcasesTwoSum.get("testcase5arr")} 
+        t5 = ${testcasesTwoSum.get("testcase5target")}
+        print(two_sum(a1,t1))
+        print(two_sum(a2,t2))
+        print(two_sum(a3,t3))
+        print(two_sum(a4,t4))
+        print(two_sum(a5,t5))
         `
         )}
        `;
@@ -241,42 +244,50 @@ const cors = require("cors");
                 if (!req) {
                   console.log("no output");
                 }
-                finalOutput = req.data.stdout;
-                console.log(finalOutput);
                 output.codeOutput = req.data.stdout;
                 output.errorOutput = req.data.stderr;
-                console.log("OUTPUT", output);
-                validateAnswer(output.codeOutput, roomName, playerNumber);
-                console.log(playerNumber);
-                console.log(roomName);
+                console.log("OUTPUT", output);                
+                if (!output.codeOutput) {
+                  io.to(roomName).emit("wrongSubmit", playerNumber);
+                  return;
+                } 
+                let outputArray = output.codeOutput.split('\n');                
+                validateAnswer(outputArray, roomName, playerNumber);                
               });
           })
           .catch((err: Error) => {
             io.to(roomName).emit("serverError", playerNumber);
-
             console.log(err);
           });
       });
     };
 
     const validateAnswer = (
-      output: string,
+      output: Array<string>,
       roomName: string,
       playerNumber: string
     ) => {
       if (!output) {
         io.to(roomName).emit("serverError", playerNumber);
+        return;
       }
-      const USERSUBMIT = output.trim();
-      const ANSWER = testcaseAnswersTwoSum.testcase1expected.trim();
-      console.log(playerNumber);
-      if (USERSUBMIT.localeCompare(ANSWER) === 0) {
-        console.log("game over");
-        io.to(roomName).emit("gameOver", playerNumber);
-        timerRunning = false;
-      } else {
-        io.to(roomName).emit("wrongSubmit", playerNumber);
-      }
+      let USERSUBMIT: Array<string> = output;
+      USERSUBMIT.pop() //remove last element which is empty because of the output
+      
+      //run throigh every test case
+      USERSUBMIT.every((element, index) => {
+        if (element.localeCompare(testcaseAnswersTwoSum[index])===0) {
+          //winner
+          console.log("game over, winner found")
+          io.to(roomName).emit("gameOver", playerNumber);
+          return;
+        }
+        else {
+          //wrong answer
+          console.log("wrong answer");
+           io.to(roomName).emit("wrongSubmit", playerNumber);
+        }
+      })
       return;
     };
 
@@ -284,7 +295,7 @@ const cors = require("cors");
     client.on("joinGame", handleJoinGame);
     client.on("run", handleRun);
     client.on("submit", handleSubmit);
-    client.on("disconnectClient", function () {      
+    client.on("disconnectClient", function () {
       client.removeAllListeners("send message");
       client.removeAllListeners("disconnect");
       io.removeAllListeners("connection");
